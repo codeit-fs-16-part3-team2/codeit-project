@@ -1,0 +1,168 @@
+# VS Code REST Client. 같은 출처의 쿠키를 다음 요청에서 사용하도록 쿠키 저장을 켠다.
+# 배포에서는 origin 전체를 Vercel 주소(https 포함, 끝 슬래시 없음)로 바꾼다.
+# 시드 판매자는 판매 가능한 같은 카드 3장 이상을 준비한다.
+# 교환 예시에는 같은 시드 판매자가 등록한 다른 종류의 판매글도 필요하다.
+# PHOTO_SEED_SELLER_PASSWORD와 PHOTO_EXAMPLE_BUYER_PASSWORD는 로컬 환경 변수로 제공한다.
+# 아래의 핵심 시연은 01~11을 위에서부터 한 번씩 보낸다. 기존 로그인 세션이 있으면 먼저 로그아웃한다.
+@origin = http://localhost:3000
+@base = {{origin}}/api
+@sellerEmail = seller@example.com
+@sellerPassword = {{$processEnv PHOTO_SEED_SELLER_PASSWORD}}
+@buyerEmail = erd-buyer-01@example.com
+@buyerNickname = 시연구매자01
+@buyerPassword = {{$processEnv PHOTO_EXAMPLE_BUYER_PASSWORD}}
+@wantedGrade = COMMON
+@wantedGenre = PORTRAIT
+@exchangeListingId = REPLACE_WITH_SEPARATE_ACTIVE_LISTING_ID
+@offeredInventoryId = REPLACE_WITH_BUYER_INVENTORY_ID
+@exchangeOfferId = REPLACE_WITH_PENDING_OFFER_ID
+@rejectOfferId = REPLACE_WITH_OTHER_PENDING_OFFER_ID
+
+### 01 판매자 로그인
+POST {{base}}/auth/login
+Origin: {{origin}}
+Content-Type: application/json
+
+{
+  "email": "{{sellerEmail}}",
+  "password": "{{sellerPassword}}"
+}
+
+### 02 판매할 카드 조회. 첫 항목이 3장 미만이면 inventoryId 참조를 해당 항목으로 바꾼다.
+# @name sellerInventory
+GET {{base}}/me/inventory?page=1&pageSize=20
+
+### 03 시드 카드 3장 등록. 장당 4P
+# @name createListing
+POST {{base}}/listings
+Origin: {{origin}}
+Content-Type: application/json
+
+{
+  "inventoryId": "{{sellerInventory.response.body.$.data.items[0].inventoryId}}",
+  "quantity": 3,
+  "unitPrice": 4,
+  "wantedGrade": "{{wantedGrade}}",
+  "wantedGenre": "{{wantedGenre}}",
+  "wantedDescription": "별이 들어간 카드를 선호합니다."
+}
+
+### 04 판매자 로그아웃
+POST {{base}}/auth/logout
+Origin: {{origin}}
+
+### 05 새 회원 가입 및 자동 로그인. 재실행할 때 이메일과 닉네임을 바꾼다.
+POST {{base}}/auth/signup
+Origin: {{origin}}
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "nickname": "{{buyerNickname}}",
+  "password": "{{buyerPassword}}",
+  "passwordConfirmation": "{{buyerPassword}}"
+}
+
+### 06 구매자 내 정보. 잔액 10P 확인
+GET {{base}}/me
+
+### 07 구매 가능한 판매 목록 첫 묶음
+GET {{base}}/listings?sort=newest&filterBy=soldOut&filterValue=false&limit=20
+
+### 08 판매 상세. 남은 수량 3장과 장당 4P 확인
+GET {{base}}/listings/{{createListing.response.body.$.data.id}}
+
+### 09 두 장 구매. 201, 결제 8P, 구매자 잔액 2P, 판매 잔여 1장
+POST {{base}}/listings/{{createListing.response.body.$.data.id}}/purchases
+Origin: {{origin}}
+Content-Type: application/json
+
+{
+  "quantity": 2,
+  "expectedUnitPrice": 4
+}
+
+### 10 구매자 마이 갤러리. 구매한 카드가 2장인지 확인
+GET {{base}}/me/inventory?page=1&pageSize=20
+
+### 11 포인트 부족 예시. 409 INSUFFICIENT_POINTS
+POST {{base}}/listings/{{createListing.response.body.$.data.id}}/purchases
+Origin: {{origin}}
+Content-Type: application/json
+
+{
+  "quantity": 1,
+  "expectedUnitPrice": 4
+}
+
+### 추가 예시. 판매 목록 다음 묶음. 실제 nextCursor 값으로 교체한다.
+GET {{base}}/listings?sort=newest&filterBy=soldOut&filterValue=false&limit=20&cursor=REPLACE_WITH_NEXT_CURSOR
+
+### 구매자 알림
+GET {{base}}/me/notifications?page=1&pageSize=20
+
+### 랜덤 상자 상태
+GET {{base}}/me/point-box
+
+### 랜덤 상자 열기. 바로 다시 보내면 409 POINT_BOX_COOLDOWN
+POST {{base}}/me/point-box/open
+Origin: {{origin}}
+
+### 구매자가 다른 카드 판매글에 교환 제안
+# @name proposeExchange
+POST {{base}}/listings/{{exchangeListingId}}/exchange-offers
+Origin: {{origin}}
+Content-Type: application/json
+
+{
+  "offeredInventoryId": "{{offeredInventoryId}}"
+}
+
+### 교환 제안 조회. 구매자는 보낸 제안, 판매자는 받은 제안이 보인다.
+GET {{base}}/listings/{{exchangeListingId}}/exchange-offers
+
+### 나의 판매 포토카드. 구매자가 보낸 대기 제안 확인
+GET {{base}}/me/sales?method=EXCHANGE&status=PENDING&page=1&pageSize=20
+
+### 제안자가 제안 취소. 이후 승인 예시를 쓰려면 새로 제안한다.
+POST {{base}}/exchange-offers/{{proposeExchange.response.body.$.data.id}}/cancel
+Origin: {{origin}}
+
+### 아래는 판매자 작업. 먼저 현재 구매자 세션으로 로그아웃
+POST {{base}}/auth/logout
+Origin: {{origin}}
+
+### 판매자로 다시 로그인
+POST {{base}}/auth/login
+Origin: {{origin}}
+Content-Type: application/json
+
+{
+  "email": "{{sellerEmail}}",
+  "password": "{{sellerPassword}}"
+}
+
+### 판매자 포인트 확인. 시연 구매 전보다 8P 증가
+GET {{base}}/me
+
+### 판매 정보 수정. 같은 판매글을 무료로 판매 가능
+PATCH {{base}}/listings/{{createListing.response.body.$.data.id}}
+Origin: {{origin}}
+Content-Type: application/json
+
+{
+  "unitPrice": 0,
+  "wantedDescription": "장르와 관계없이 제안해 주세요."
+}
+
+### 판매자가 대기 중인 교환 제안 승인. exchangeOfferId 값을 설정한다.
+POST {{base}}/exchange-offers/{{exchangeOfferId}}/approve
+Origin: {{origin}}
+
+### 판매자가 별도의 대기 제안 거절. rejectOfferId 값을 설정한다.
+POST {{base}}/exchange-offers/{{rejectOfferId}}/reject
+Origin: {{origin}}
+
+### 판매 취소. 이 판매글에 대기 제안이 있으면 자동 종료한다.
+POST {{base}}/listings/{{createListing.response.body.$.data.id}}/cancel
+Origin: {{origin}}

@@ -1,0 +1,180 @@
+// 최애의 포토 테이블 초안. docs/ERD.md와 docs/api.md를 기준으로 한다.
+// PostgreSQL 연결 URL과 Prisma Client 생성 설정은 API 구현 단계에서 정한다.
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ExchangeOfferStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELED_BY_PROPOSER
+  CLOSED_LISTING_CANCELED
+  CLOSED_SOLD_OUT
+}
+
+enum PointEntryKind {
+  SIGNUP_BONUS
+  POINT_BOX_REWARD
+  PURCHASE_DEBIT
+  SALE_CREDIT
+}
+
+enum NotificationKind {
+  EXCHANGE_OFFER_RECEIVED
+  EXCHANGE_APPROVED
+  EXCHANGE_REJECTED
+  PURCHASE_COMPLETED
+  SALE_COMPLETED
+  SOLD_OUT
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  nickname     String   @unique
+  passwordHash String
+  pointBalance Int      @default(0)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  sessions      Session[]
+  inventory     Inventory[]
+  purchases     Purchase[]
+  pointEntries  PointEntry[]
+  notifications Notification[]
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  tokenHash String   @unique
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  // 발급 시점부터 24시간 뒤의 시각을 세션 생성 서비스에서 설정한다.
+  expiresAt DateTime @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model PhotoCard {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  // 등급과 장르의 허용 값은 확정 후 검증 규칙에 반영한다.
+  grade          String
+  genre          String
+  description    String
+  imageUrl       String
+  issuedQuantity Int
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  inventory Inventory[]
+}
+
+model Inventory {
+  id            String @id @default(uuid()) @db.Uuid
+  userId        String @db.Uuid
+  photoCardId   String @db.Uuid
+  // 판매 중이거나 교환 대기 중인 카드도 소유권이 이전되기 전에는 포함한다.
+  ownedQuantity Int
+
+  user           User            @relation(fields: [userId], references: [id])
+  photoCard      PhotoCard       @relation(fields: [photoCardId], references: [id])
+  listings       Listing[]
+  exchangeOffers ExchangeOffer[]
+
+  @@unique([userId, photoCardId])
+  @@index([photoCardId])
+}
+
+model Listing {
+  id                String    @id @default(uuid()) @db.Uuid
+  inventoryId       String    @db.Uuid
+  unitPrice         Int
+  remainingQuantity Int
+  // 교환 희망 필드는 API 요청 초안에 맞춰 필수로 두고, 생략 정책이 정해지면 재검토한다.
+  wantedGrade       String
+  wantedGenre       String
+  wantedDescription String
+  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @db.Timestamptz(3)
+  // 취소 시각이 있으면 취소, 없고 남은 수량이 0이면 품절, 그 외에는 판매 중으로 표시한다.
+  canceledAt        DateTime? @db.Timestamptz(3)
+
+  inventory      Inventory       @relation(fields: [inventoryId], references: [id])
+  purchases      Purchase[]
+  exchangeOffers ExchangeOffer[]
+  notifications  Notification[]
+
+  @@index([inventoryId])
+  @@index([createdAt, id])
+  @@index([unitPrice, id])
+}
+
+model Purchase {
+  id        String   @id @default(uuid()) @db.Uuid
+  listingId String   @db.Uuid
+  buyerId   String   @db.Uuid
+  quantity  Int
+  // 판매글의 가격이 나중에 바뀌어도 구매 당시의 장당 가격을 유지한다.
+  unitPrice Int
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  listing      Listing      @relation(fields: [listingId], references: [id])
+  buyer        User         @relation(fields: [buyerId], references: [id])
+  pointEntries PointEntry[]
+
+  @@index([listingId])
+  @@index([buyerId])
+}
+
+model ExchangeOffer {
+  id                 String              @id @default(uuid()) @db.Uuid
+  listingId          String              @db.Uuid
+  offeredInventoryId String              @db.Uuid
+  status             ExchangeOfferStatus @default(PENDING)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  resolvedAt         DateTime?           @db.Timestamptz(3)
+
+  listing          Listing   @relation(fields: [listingId], references: [id])
+  offeredInventory Inventory @relation(fields: [offeredInventoryId], references: [id])
+
+  @@index([listingId, status])
+  @@index([offeredInventoryId, status])
+}
+
+model PointEntry {
+  id         String         @id @default(uuid()) @db.Uuid
+  userId     String         @db.Uuid
+  purchaseId String?        @db.Uuid
+  kind       PointEntryKind
+  // 구매 차감은 음수, 적립은 양수다. 0P 구매는 구매 기록만 남긴다.
+  amount     Int
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+
+  user     User      @relation(fields: [userId], references: [id])
+  purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseId])
+  @@index([userId, kind, createdAt])
+}
+
+model Notification {
+  id          String           @id @default(uuid()) @db.Uuid
+  recipientId String           @db.Uuid
+  listingId   String           @db.Uuid
+  kind        NotificationKind
+  message     String
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+
+  recipient User    @relation(fields: [recipientId], references: [id])
+  listing   Listing @relation(fields: [listingId], references: [id])
+
+  @@index([recipientId, createdAt, id])
+  @@index([listingId])
+}
+
+// 마이그레이션에서 수량과 잔액은 0 이상, 구매 수량과 발행량은 양수,
+// 장당 가격은 0 이상이 되도록 PostgreSQL CHECK 제약을 추가한다.
+// 구매 한 건의 차감·적립 내역은 종류당 한 건만 만들며, 보유 수량과 잔액 갱신과 함께 처리한다.
