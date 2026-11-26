@@ -3,6 +3,7 @@
 # 시드 판매자는 판매 가능한 같은 카드 3장 이상을 준비한다.
 # 교환 예시에는 같은 시드 판매자가 등록한 다른 종류의 판매글도 필요하다.
 # PHOTO_SEED_SELLER_PASSWORD와 PHOTO_EXAMPLE_BUYER_PASSWORD는 로컬 환경 변수로 제공한다.
+# 예시 신규 회원 비밀번호는 공백 없이 8~32자, buyerNickname은 2~12자로 설정한다.
 # 아래의 핵심 시연은 01~11을 위에서부터 한 번씩 보낸다. 기존 로그인 세션이 있으면 먼저 로그아웃한다.
 @origin = http://localhost:3000
 @base = {{origin}}/api
@@ -12,10 +13,9 @@
 @buyerNickname = 시연구매자01
 @buyerPassword = {{$processEnv PHOTO_EXAMPLE_BUYER_PASSWORD}}
 @wantedGrade = COMMON
-@wantedGenre = PORTRAIT
 @exchangeListingId = REPLACE_WITH_SEPARATE_ACTIVE_LISTING_ID
 @offeredInventoryId = REPLACE_WITH_BUYER_INVENTORY_ID
-@exchangeOfferId = REPLACE_WITH_PENDING_OFFER_ID
+@exchangeOfferId = REPLACE_WITH_PENDING_OFFER_ID_FROM_EXCHANGE_LISTING
 @rejectOfferId = REPLACE_WITH_OTHER_PENDING_OFFER_ID
 
 ### 01 판매자 로그인
@@ -32,7 +32,7 @@ Content-Type: application/json
 # @name sellerInventory
 GET {{base}}/me/inventory?page=1&pageSize=20
 
-### 03 시드 카드 3장 등록. 장당 4P
+### 03 시드 카드 3장 등록. 장당 4P, 교환 희망 장르는 미입력
 # @name createListing
 POST {{base}}/listings
 Origin: {{origin}}
@@ -43,7 +43,6 @@ Content-Type: application/json
   "quantity": 3,
   "unitPrice": 4,
   "wantedGrade": "{{wantedGrade}}",
-  "wantedGenre": "{{wantedGenre}}",
   "wantedDescription": "별이 들어간 카드를 선호합니다."
 }
 
@@ -108,7 +107,7 @@ GET {{base}}/me/point-box
 POST {{base}}/me/point-box/open
 Origin: {{origin}}
 
-### 구매자가 다른 카드 판매글에 교환 제안
+### 구매자가 종류가 다른 카드 판매글에 교환 제안. offeredInventoryId의 카드 종류를 확인한다.
 # @name proposeExchange
 POST {{base}}/listings/{{exchangeListingId}}/exchange-offers
 Origin: {{origin}}
@@ -121,8 +120,8 @@ Content-Type: application/json
 ### 교환 제안 조회. 구매자는 보낸 제안, 판매자는 받은 제안이 보인다.
 GET {{base}}/listings/{{exchangeListingId}}/exchange-offers
 
-### 나의 판매 포토카드. 구매자가 보낸 대기 제안 확인
-GET {{base}}/me/sales?method=EXCHANGE&status=PENDING&page=1&pageSize=20
+### 나의 판매 포토카드. 구매자가 보낸 대기 제안이 건별 1장으로 보이는지 확인
+GET {{base}}/me/sales?method=EXCHANGE&soldOut=false&page=1&pageSize=20
 
 ### 제안자가 제안 취소. 이후 승인 예시를 쓰려면 새로 제안한다.
 POST {{base}}/exchange-offers/{{proposeExchange.response.body.$.data.id}}/cancel
@@ -145,24 +144,50 @@ Content-Type: application/json
 ### 판매자 포인트 확인. 시연 구매 전보다 8P 증가
 GET {{base}}/me
 
-### 판매 정보 수정. 같은 판매글을 무료로 판매 가능
+### 판매 정보 수정. 0P로 바꾸고, null로 희망 등급을 지운다.
 PATCH {{base}}/listings/{{createListing.response.body.$.data.id}}
 Origin: {{origin}}
 Content-Type: application/json
 
 {
   "unitPrice": 0,
+  "wantedGrade": null,
   "wantedDescription": "장르와 관계없이 제안해 주세요."
 }
 
-### 판매자가 대기 중인 교환 제안 승인. exchangeOfferId 값을 설정한다.
+### 별도 판매글(exchangeListingId)의 대기 제안 승인. createListing으로 만든 판매글은 마지막 취소 예시에 사용한다.
 POST {{base}}/exchange-offers/{{exchangeOfferId}}/approve
 Origin: {{origin}}
 
-### 판매자가 별도의 대기 제안 거절. rejectOfferId 값을 설정한다.
+### 판매자가 대기 제안 거절. 승인으로 품절된 판매글의 다른 제안은 자동 종료되므로, 별도 활성 판매글의 대기 제안을 rejectOfferId로 사용한다.
 POST {{base}}/exchange-offers/{{rejectOfferId}}/reject
 Origin: {{origin}}
 
 ### 판매 취소. 이 판매글에 대기 제안이 있으면 자동 종료한다.
+# 취소 알림까지 확인하려면 먼저 별도 회원이 이 판매글에 다른 종류의 카드로 교환을 제안한다.
+# 취소 후 그 회원의 GET /api/me/notifications에서 LISTING_CANCELED를 확인한다.
 POST {{base}}/listings/{{createListing.response.body.$.data.id}}/cancel
 Origin: {{origin}}
+
+### 판매자 자신의 취소 이력. 200, CANCELED와 canceledAt 확인
+GET {{base}}/me/sales?method=SALE&canceled=true&page=1&pageSize=20
+
+### 취소 판매 상세. 판매자 세션에서는 200 CANCELED
+GET {{base}}/listings/{{createListing.response.body.$.data.id}}
+
+### 판매자 로그아웃 후 신규 구매자로 다시 로그인
+POST {{base}}/auth/logout
+Origin: {{origin}}
+
+### 취소 판매의 다른 회원 접근을 확인할 구매자 세션
+POST {{base}}/auth/login
+Origin: {{origin}}
+Content-Type: application/json
+
+{
+  "email": "{{buyerEmail}}",
+  "password": "{{buyerPassword}}"
+}
+
+### 취소 판매 상세. 구매자 세션에서는 404 LISTING_NOT_FOUND
+GET {{base}}/listings/{{createListing.response.body.$.data.id}}
