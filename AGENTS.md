@@ -1,65 +1,19 @@
-# AGENTS.md
+## AGENTS.md
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+기술스택과 프로젝트구조는 `README.md` 명세 문서는 `docs/` 아래에 있다: `brief.md`(요구사항), `api.md`(API 계약), `ERD.md`·`DB.md`(데이터 모델), `ADR.md`(결정 기록), `plan.md`(범위·화면), `issues.md`(이슈·완료 기준), `api.http`(시연 요청). 스키마는 `api/prisma/schema.prisma`.
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+**코드 작성 전에 관련 명세를 반드시 읽는다.** 이슈 번호가 주어지면 `issues.md`에서 완료 기준을 확인한다.
 
-## 1. Think Before Coding
+### 금지
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+- 테스트 코드를 작성하지 않는다.
+- 명세가 정하지 않은 것은 추측하지 말고 사용자에게 질문한다.
+- `docs/` 명세 파일을 임의로 수정하지 않는다. 바꿔야 할 것 같으면 먼저 묻는다.
+- 터미널 명령을 직접 실행하지 않는다. 필요한 명령과 순서를 사용자에게 안내한다.
+- `.env` 파일을 열거나 출력하지 않는다.
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+### 작업 완료 시 보고
 
-## 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-## 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+1. 바꾼 파일 목록
+2. 실행할 명령이 있으면 순서대로 안내
+3. `docs/api.http` 요청과 기대 상태 코드, 또는 화면에서 확인할 항목
