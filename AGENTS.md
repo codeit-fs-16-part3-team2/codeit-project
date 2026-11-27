@@ -1,6 +1,6 @@
 ## AGENTS.md
 
-기술스택과 프로젝트구조는 `README.md` 명세 문서는 `docs/` 아래에 있다: `brief.md`(요구사항), `api.md`(API 계약), `ERD.md`·`DB.md`(데이터 모델), `ADR.md`(결정 기록), `plan.md`(범위·화면), `issues.md`(이슈·완료 기준), `api.http`(시연 요청). 스키마는 `api/prisma/schema.prisma`.
+기술스택과 프로젝트구조는 `README.md` 명세 문서는 `docs/` 아래에 있다: `brief.md`(요구사항), `api.md`(API 계약), `ERD.md`·`DB.md`(데이터 모델), `ADR.md`(결정 기록), `plan.md`(범위·화면), `issues.md`(이슈·완료 기준), `api.http`(시연 요청). 스키마는 `api/prisma/schema.prisma`. `CONTRIBUTING.md`: 브랜치·커밋·PR 컨벤션
 
 **코드 작성 전에 관련 명세를 반드시 읽는다.** 이슈 번호가 주어지면 `issues.md`에서 완료 기준을 확인한다.
 

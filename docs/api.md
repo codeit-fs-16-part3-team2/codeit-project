@@ -21,6 +21,7 @@
 | 로그인 | `POST /api/auth/login` | 비로그인 | `email, password` | `200` 회원, 세션 쿠키 설정 |
 | 로그아웃 | `POST /api/auth/logout` | 회원 | 본문 없음 | `200 { loggedOut: true }`, 세션 폐기 및 쿠키 만료 |
 | 내 정보 | `GET /api/me` | 회원 | 없음 | `200` 회원. 현재 포인트 포함 |
+| 포토카드 발행 | `POST /api/me/photocards` | 회원 | `multipart/form-data`: 사진 파일 `image`, `name, minimumPrice, grade, issuedQuantity, genre, description` | `201 { card: 카드, inventory: 갤러리 항목 }`. 발행 수량 전부가 발행 회원에게 귀속됨 |
 | 판매 목록 | `GET /api/listings` | 회원 | `q, filterBy, filterValue, sort, cursor, limit` | `200 { items: 판매 요약[], nextCursor }` |
 | 판매 상세 | `GET /api/listings/:listingId` | 회원. 취소된 판매글은 등록자만 열람 | 없음 | `200` 판매 상세 |
 | 판매 등록 | `POST /api/listings` | 판매 가능한 카드를 보유한 회원 | 필수 `inventoryId, quantity, unitPrice`. 선택 `wantedGrade, wantedGenre, wantedDescription` | `201` 판매 상세 |
@@ -42,8 +43,9 @@
 
 - 회원가입 닉네임은 2~12자다. 비밀번호는 8~32자이며 공백 문자를 허용하지 않는다. 영문·숫자·특수문자 조합은 강제하지 않으며, 비밀번호와 비밀번호 확인 값은 일치해야 한다. 조건을 위반하면 `400 VALIDATION_ERROR`를 반환한다.
 - 카드 등급은 `COMMON`, `RARE`, `SUPER RARE`, `LEGENDARY`다. 장르 허용 목록은 초기 시드 데이터 작성 때 확정한다. 시드 카드, 목록의 등급·장르 필터, 입력된 교환 희망 등급·장르에 같은 허용 목록을 적용한다.
+- 포토카드 발행은 로그인 회원이 `multipart/form-data`로 직접 찍은 사진과 `name, minimumPrice, grade, issuedQuantity, genre, description`을 제출한다. `minimumPrice`는 0 이상의 정수, `issuedQuantity`는 양의 정수다. 성공 시 카드와 동일 수량의 발행자 보유 기록을 함께 생성하고, 응답의 `imageUrl`로 업로드된 사진을 제공한다. 월별 생성 횟수와 카드별 최대 발행량 검사는 심화 기능이며 기본 기능에서는 제한하지 않는다.
 - 가입에 실패하면 화면에 이메일과 닉네임을 유지하고 비밀번호와 비밀번호 확인을 비운다. 구매에 실패하면 선택 수량을 유지한다. 가격·재고가 바뀌었으면 판매 상세를 다시 조회해 최신 값을 보여주고, 현재 조건에서 구매할 수 있는 수량을 사용자가 다시 확인한 뒤 재요청한다.
-- 등록·구매 수량은 양의 정수다. 장당 가격과 `expectedUnitPrice`는 0 이상의 정수다. 구매 요청의 `expectedUnitPrice`는 화면에서 확인한 장당 가격이다. 실제 가격과 다르면 사용자가 갱신된 가격을 확인한 뒤 다시 요청한다.
+- 등록·구매 수량은 양의 정수다. 장당 가격과 `expectedUnitPrice`는 0 이상의 정수이며 판매 장당 가격은 카드의 `minimumPrice` 이상이어야 한다. 구매 요청의 `expectedUnitPrice`는 화면에서 확인한 장당 가격이다. 실제 가격과 다르면 사용자가 갱신된 가격을 확인한 뒤 다시 요청한다.
 - 판매 등록의 입력 검증 실패(`400 VALIDATION_ERROR`)는 등록 화면에서 입력을 유지하고 수정한다. 입력 검증 이후 등록 처리 실패의 재시도는 실패 화면에서 시작하며, 등록 화면에서 직전 입력을 복원한다. 인증·접근 실패는 공통 접근 규칙을 따른다.
 - 교환 희망 등급·장르·설명은 각각 선택이다. 판매 등록에서 미입력한 필드는 생략하거나 `null`로 보낼 수 있으며, 상세 응답은 이를 `null`로 반환한다. 화면에서 빈 입력은 미입력으로 처리한다.
 - 판매 수정은 보낸 필드만 변경한다. 교환 희망 필드를 생략하면 기존 값을 유지하고, `null`을 보내면 해당 조건을 지운다. 남은 판매 수량은 구매와 교환 승인에서만 감소한다. 판매 취소나 마지막 판매 수량 소진은 같은 거래 안에서 남은 교환 제안을 자동 종료한다. 판매를 취소하면 `canceledAt`을 기록하고, 자동 종료된 대기 제안의 제안자에게 판매글당 `LISTING_CANCELED` 알림을 한 건씩 저장한다. 같은 회원의 대기 제안이 여러 건이어도 취소 알림은 한 건이다.
@@ -60,7 +62,7 @@
 | 이름 | `data` 또는 목록 항목의 필드 |
 | --- | --- |
 | 회원 | `id, email, nickname, pointBalance` |
-| 카드 | `id, name, grade, genre, description, imageUrl, issuedQuantity` |
+| 카드 | `id, name, minimumPrice, grade, genre, description, imageUrl, issuedQuantity` |
 | 판매 요약 | `id, card(카드), sellerNickname, unitPrice, remainingQuantity, status, createdAt`. 상태는 `ACTIVE, SOLD_OUT, CANCELED`이며 마켓플레이스 목록에서 취소된 판매글은 제외한다. |
 | 판매 상세 | 판매 요약 필드와 `wantedGrade, wantedGenre, wantedDescription, isOwner, canceledAt`. 희망 필드 미입력 값과 취소되지 않은 판매글의 `canceledAt`은 각각 `null` |
 | 구매 결과 | `id, listingId, quantity, unitPrice, totalPrice, buyerPointBalance, listingRemainingQuantity, createdAt`. 0P 구매도 영수증을 반환한다. |
@@ -104,7 +106,7 @@
 
 | HTTP | `error.code` | 발생 조건 |
 | --- | --- | --- |
-| 400 | `VALIDATION_ERROR` | JSON, 입력 형식, 필수 값, 페이지·커서·필터·수량·가격이 계약과 다름 |
+| 400 | `VALIDATION_ERROR` | 입력 형식, 필수 값, 페이지·커서·필터·수량·가격이 계약과 다르거나 판매 가격이 카드 최소 가격보다 낮음 |
 | 400 | `SAME_CARD_EXCHANGE_NOT_ALLOWED` | 판매 대상과 같은 `photoCardId`의 카드로 교환을 제안함 |
 | 401 | `AUTH_REQUIRED` | 회원 전용 요청에 세션이 없거나 세션이 만료됨 |
 | 401 | `INVALID_CREDENTIALS` | 이메일 또는 비밀번호를 확인할 수 없음 |
@@ -120,7 +122,7 @@
 | 409 | `INSUFFICIENT_POINTS` | 구매자 포인트가 결제액보다 적음 |
 | 409 | `EXCHANGE_ALREADY_RESOLVED` | 대기 상태를 벗어난 제안에 승인·거절·취소 요청 |
 | 409 | `POINT_BOX_COOLDOWN` | 마지막 상자를 연 뒤 한 시간이 지나지 않음 |
-| 415 | `UNSUPPORTED_MEDIA_TYPE` | JSON 입력을 요구하는 요청의 `Content-Type`이 JSON이 아님 |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | JSON 입력 요청에 JSON이 아닌 형식 또는 포토카드 발행 요청에 `multipart/form-data`가 아닌 형식을 사용함 |
 | 500 | `INTERNAL_ERROR` | 서버의 예기치 않은 오류. 상태 변경이 실패하면 거래 결과를 저장하지 않음 |
 
 ## 팀 확인이 필요한 항목
